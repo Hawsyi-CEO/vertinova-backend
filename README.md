@@ -1,15 +1,18 @@
 # Vertinova Backend API
 
-Backend API untuk aplikasi Vertinova menggunakan Laravel 11.
+Backend API untuk aplikasi Vertinova Finance menggunakan Laravel 11.
+
+🌐 **Production:** https://vertinova.id/api
 
 ## Requirements
 
 - PHP 8.2 atau lebih tinggi
 - Composer
-- MySQL
-- Node.js & NPM (untuk Laravel Vite)
+- MySQL 8.0+ atau MariaDB 10.6+
+- Node.js 18+ & NPM (untuk Laravel Vite)
+- Nginx atau Apache (untuk production)
 
-## Installation
+## Installation (Development)
 
 1. Clone repository ini:
 ```bash
@@ -50,6 +53,31 @@ php artisan serve
 ```
 
 API akan berjalan di `http://localhost:8000`
+
+## Deployment (Production)
+
+Lihat [DEPLOYMENT_GUIDE.md](../DEPLOYMENT_GUIDE.md) untuk panduan lengkap deployment ke production.
+
+### Quick Deploy
+
+```bash
+# Pull latest code
+git pull origin main
+
+# Install dependencies
+composer install --no-dev --optimize-autoloader
+
+# Run migrations
+php artisan migrate --force
+
+# Optimize
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+
+# Restart services
+sudo systemctl restart php8.2-fpm nginx
+```
 
 ## API Endpoints
 

@@ -14,7 +14,10 @@ class TransactionGroupsController extends Controller
         $user = Auth::user();
         $type = $request->get('type'); // 'income' or 'expense'
 
-        $query = TransactionGroup::where('created_by', $user->id);
+        // Temporary: Show all groups for debugging
+        // TODO: Implement proper group sharing or make default groups global
+        $query = TransactionGroup::query();
+        // $query = TransactionGroup::where('created_by', $user->id);
 
         if ($type) {
             $query->where('type', $type);
@@ -87,21 +90,27 @@ class TransactionGroupsController extends Controller
 
             // Try to get from database, fallback to static data if error
             try {
-                $query = TransactionGroup::where('created_by', $user->id);
+                // Temporary: Show all active groups for all users
+                // TODO: Implement proper group sharing
+                $query = TransactionGroup::where('is_active', true);
+                // $query = TransactionGroup::where('created_by', $user->id)->where('is_active', true);
                 
-                if ($type) {
+                if ($type && $type !== 'both') {
                     $query->where('type', $type);
                 }
 
-                $groups = $query->select('id', 'name', 'type', 'color')->get()->toArray();
+                $groups = $query->select('id', 'name', 'type', 'color')
+                    ->orderBy('type')
+                    ->orderBy('name')
+                    ->get();
                 
                 // If no groups found, add default groups for this user
-                if (empty($groups)) {
+                if ($groups->isEmpty()) {
                     $defaultGroups = [
-                        ['created_by' => $user->id, 'name' => 'Gaji', 'type' => 'income', 'color' => '#10B981'],
-                        ['created_by' => $user->id, 'name' => 'Freelance', 'type' => 'income', 'color' => '#3B82F6'],
-                        ['created_by' => $user->id, 'name' => 'Makanan', 'type' => 'expense', 'color' => '#F59E0B'],
-                        ['created_by' => $user->id, 'name' => 'Transportasi', 'type' => 'expense', 'color' => '#EF4444'],
+                        ['created_by' => $user->id, 'name' => 'Gaji', 'type' => 'income', 'color' => '#10B981', 'is_active' => true],
+                        ['created_by' => $user->id, 'name' => 'Freelance', 'type' => 'income', 'color' => '#3B82F6', 'is_active' => true],
+                        ['created_by' => $user->id, 'name' => 'Makanan', 'type' => 'expense', 'color' => '#F59E0B', 'is_active' => true],
+                        ['created_by' => $user->id, 'name' => 'Transportasi', 'type' => 'expense', 'color' => '#EF4444', 'is_active' => true],
                     ];
                     
                     foreach ($defaultGroups as $group) {
@@ -109,33 +118,45 @@ class TransactionGroupsController extends Controller
                     }
                     
                     // Re-query after creating defaults
-                    $query = TransactionGroup::where('created_by', $user->id);
-                    if ($type) {
+                    $query = TransactionGroup::where('is_active', true);
+                    if ($type && $type !== 'both') {
                         $query->where('type', $type);
                     }
-                    $groups = $query->select('id', 'name', 'type', 'color')->get()->toArray();
+                    $groups = $query->select('id', 'name', 'type', 'color')
+                        ->orderBy('type')
+                        ->orderBy('name')
+                        ->get();
                 }
+
+                return response()->json([
+                    'success' => true,
+                    'data' => $groups
+                ]);
             } catch (\Exception $dbError) {
                 // Fallback to static data if database fails
                 $groups = [
-                    ['id' => 1, 'name' => 'Gaji', 'type' => 'income', 'category' => null],
-                    ['id' => 2, 'name' => 'Freelance', 'type' => 'income', 'category' => null],
-                    ['id' => 3, 'name' => 'Makanan', 'type' => 'expense', 'category' => 'operational'],
-                    ['id' => 4, 'name' => 'Transportasi', 'type' => 'expense', 'category' => 'operational'],
+                    ['id' => 1, 'name' => 'Gaji', 'type' => 'income', 'color' => '#10B981'],
+                    ['id' => 2, 'name' => 'Freelance', 'type' => 'income', 'color' => '#3B82F6'],
+                    ['id' => 3, 'name' => 'Makanan', 'type' => 'expense', 'color' => '#F59E0B'],
+                    ['id' => 4, 'name' => 'Transportasi', 'type' => 'expense', 'color' => '#EF4444'],
                 ];
                 
-                if ($type) {
+                if ($type && $type !== 'both') {
                     $groups = array_filter($groups, function($group) use ($type) {
                         return $group['type'] === $type;
                     });
                     $groups = array_values($groups);
                 }
-            }
 
-            return response()->json($groups);
+                return response()->json([
+                    'success' => true,
+                    'data' => $groups
+                ]);
+            }
         } catch (\Exception $e) {
             return response()->json([
-                'error' => $e->getMessage()
+                'success' => false,
+                'message' => $e->getMessage()
             ], 500);
         }
     }

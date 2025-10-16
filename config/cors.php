@@ -19,12 +19,13 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => [
-        'http://localhost:3000',
-        'http://localhost:5173',
-        'http://localhost:5174',
-        // Tambahkan URL production frontend nanti
-    ],
+    'allowed_origins' => env('APP_ENV') === 'production' 
+        ? explode(',', env('CORS_ALLOWED_ORIGINS', 'https://vertinova.id'))
+        : [
+            'http://localhost:3000',
+            'http://localhost:5173',
+            'http://localhost:5174',
+        ],
 
     'allowed_origins_patterns' => [],
 
