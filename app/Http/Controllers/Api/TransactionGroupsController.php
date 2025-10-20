@@ -12,18 +12,31 @@ class TransactionGroupsController extends Controller
     public function index(Request $request)
     {
         $user = Auth::user();
-        $type = $request->get('type'); // 'income' or 'expense'
 
-        // Temporary: Show all groups for debugging
-        // TODO: Implement proper group sharing or make default groups global
-        $query = TransactionGroup::query();
-        // $query = TransactionGroup::where('created_by', $user->id);
+        // Show all active groups (universal system - no type filtering)
+        $query = TransactionGroup::where('is_active', true);
 
-        if ($type) {
-            $query->where('type', $type);
-        }
-
-        $groups = $query->get();
+        $groups = $query->with(['transactions' => function($query) {
+            $query->latest()->take(5); // Latest 5 transactions for preview
+        }])->get()->map(function ($group) {
+            return [
+                'id' => $group->id,
+                'name' => $group->name,
+                'description' => $group->description,
+                'color' => $group->color,
+                'created_by' => $group->created_by,
+                'is_active' => $group->is_active,
+                'created_at' => $group->created_at,
+                'updated_at' => $group->updated_at,
+                'statistics' => [
+                    'total_income' => $group->transactions()->where('type', 'income')->sum('amount'),
+                    'total_expense' => $group->transactions()->where('type', 'expense')->sum('amount'),
+                    'transaction_count' => $group->transactions()->count(),
+                    'last_transaction' => $group->transactions()->latest()->first()?->created_at,
+                ],
+                'recent_transactions' => $group->transactions
+            ];
+        });
 
         return response()->json([
             'success' => true,
@@ -37,44 +50,26 @@ class TransactionGroupsController extends Controller
             $request->validate([
                 'name' => 'required|string|max:255',
                 'description' => 'nullable|string',
-                'type' => 'required|in:income,expense',
                 'color' => 'nullable|string|size:7|regex:/^#[0-9A-Fa-f]{6}$/',
             ]);
 
             $user = Auth::user();
 
-            try {
-                // Try to create in database
-                $group = TransactionGroup::create([
-                    'created_by' => $user->id,
-                    'name' => $request->name,
-                    'description' => $request->description,
-                    'type' => $request->type,
-                    'color' => $request->color ?? '#3B82F6',
-                    'is_active' => true,
-                ]);
+            // Create universal transaction group (no type restriction)
+            $group = TransactionGroup::create([
+                'created_by' => $user->id,
+                'name' => $request->name,
+                'description' => $request->description,
+                'type' => 'universal', // Set to universal for new system
+                'color' => $request->color ?? '#3B82F6',
+                'is_active' => true,
+            ]);
 
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Transaction group created successfully',
-                    'data' => [
-                        'group' => $group
-                    ]
-                ], 201);
-            } catch (\Exception $dbError) {
-                // Fallback response if database fails
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Transaction group created successfully',
-                    'data' => [
-                        'id' => rand(1000, 9999),
-                        'name' => $request->name,
-                        'type' => $request->type,
-                        'category' => $request->category,
-                        'user_id' => $user->id,
-                    ]
-                ], 201);
-            }
+            return response()->json([
+                'success' => true,
+                'message' => 'Transaction group created successfully',
+                'data' => $group
+            ], 201);
         } catch (\Exception $e) {
             return response()->json([
                 'error' => $e->getMessage()
@@ -86,73 +81,37 @@ class TransactionGroupsController extends Controller
     {
         try {
             $user = Auth::user();
-            $type = $request->get('type');
 
-            // Try to get from database, fallback to static data if error
-            try {
-                // Temporary: Show all active groups for all users
-                // TODO: Implement proper group sharing
-                $query = TransactionGroup::where('is_active', true);
-                // $query = TransactionGroup::where('created_by', $user->id)->where('is_active', true);
-                
-                if ($type && $type !== 'both') {
-                    $query->where('type', $type);
-                }
-
-                $groups = $query->select('id', 'name', 'type', 'color')
-                    ->orderBy('type')
-                    ->orderBy('name')
-                    ->get();
-                
-                // If no groups found, add default groups for this user
-                if ($groups->isEmpty()) {
-                    $defaultGroups = [
-                        ['created_by' => $user->id, 'name' => 'Gaji', 'type' => 'income', 'color' => '#10B981', 'is_active' => true],
-                        ['created_by' => $user->id, 'name' => 'Freelance', 'type' => 'income', 'color' => '#3B82F6', 'is_active' => true],
-                        ['created_by' => $user->id, 'name' => 'Makanan', 'type' => 'expense', 'color' => '#F59E0B', 'is_active' => true],
-                        ['created_by' => $user->id, 'name' => 'Transportasi', 'type' => 'expense', 'color' => '#EF4444', 'is_active' => true],
-                    ];
-                    
-                    foreach ($defaultGroups as $group) {
-                        TransactionGroup::create($group);
-                    }
-                    
-                    // Re-query after creating defaults
-                    $query = TransactionGroup::where('is_active', true);
-                    if ($type && $type !== 'both') {
-                        $query->where('type', $type);
-                    }
-                    $groups = $query->select('id', 'name', 'type', 'color')
-                        ->orderBy('type')
-                        ->orderBy('name')
-                        ->get();
-                }
-
-                return response()->json([
-                    'success' => true,
-                    'data' => $groups
-                ]);
-            } catch (\Exception $dbError) {
-                // Fallback to static data if database fails
-                $groups = [
-                    ['id' => 1, 'name' => 'Gaji', 'type' => 'income', 'color' => '#10B981'],
-                    ['id' => 2, 'name' => 'Freelance', 'type' => 'income', 'color' => '#3B82F6'],
-                    ['id' => 3, 'name' => 'Makanan', 'type' => 'expense', 'color' => '#F59E0B'],
-                    ['id' => 4, 'name' => 'Transportasi', 'type' => 'expense', 'color' => '#EF4444'],
+            // Get all active universal groups (no type filtering)
+            $query = TransactionGroup::where('is_active', true);
+            
+            $groups = $query->select('id', 'name', 'color', 'description')
+                ->orderBy('name')
+                ->get();
+            
+            // If no groups found, create default universal groups
+            if ($groups->isEmpty()) {
+                $defaultGroups = [
+                    ['created_by' => $user->id, 'name' => 'Keuangan Pribadi', 'type' => 'universal', 'color' => '#3B82F6', 'is_active' => true, 'description' => 'Kelompok untuk transaksi keuangan pribadi'],
+                    ['created_by' => $user->id, 'name' => 'Proyek Freelance', 'type' => 'universal', 'color' => '#10B981', 'is_active' => true, 'description' => 'Kelompok untuk transaksi proyek freelance'],
+                    ['created_by' => $user->id, 'name' => 'Usaha Sampingan', 'type' => 'universal', 'color' => '#F59E0B', 'is_active' => true, 'description' => 'Kelompok untuk transaksi usaha sampingan'],
                 ];
                 
-                if ($type && $type !== 'both') {
-                    $groups = array_filter($groups, function($group) use ($type) {
-                        return $group['type'] === $type;
-                    });
-                    $groups = array_values($groups);
+                foreach ($defaultGroups as $group) {
+                    TransactionGroup::create($group);
                 }
-
-                return response()->json([
-                    'success' => true,
-                    'data' => $groups
-                ]);
+                
+                // Re-query after creating defaults
+                $groups = TransactionGroup::where('is_active', true)
+                    ->select('id', 'name', 'color', 'description')
+                    ->orderBy('name')
+                    ->get();
             }
+
+            return response()->json([
+                'success' => true,
+                'data' => $groups
+            ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -165,14 +124,38 @@ class TransactionGroupsController extends Controller
     {
         $user = Auth::user();
         
-        // Check if user owns this group or is admin
-        if ($transactionGroup->created_by !== $user->id && $user->role !== 'admin') {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        // For now, allow access to all groups (can add permissions later)
+        // if ($transactionGroup->created_by !== $user->id && $user->role !== 'admin') {
+        //     return response()->json(['message' => 'Unauthorized'], 403);
+        // }
+
+        // Load group with its transactions and statistics
+        $transactionGroup->load(['transactions' => function($query) {
+            $query->latest();
+        }]);
+
+        $data = [
+            'id' => $transactionGroup->id,
+            'name' => $transactionGroup->name,
+            'description' => $transactionGroup->description,
+            'color' => $transactionGroup->color,
+            'created_by' => $transactionGroup->created_by,
+            'is_active' => $transactionGroup->is_active,
+            'created_at' => $transactionGroup->created_at,
+            'updated_at' => $transactionGroup->updated_at,
+            'statistics' => [
+                'total_income' => $transactionGroup->transactions()->where('type', 'income')->sum('amount'),
+                'total_expense' => $transactionGroup->transactions()->where('type', 'expense')->sum('amount'),
+                'net_amount' => $transactionGroup->transactions()->where('type', 'income')->sum('amount') - $transactionGroup->transactions()->where('type', 'expense')->sum('amount'),
+                'transaction_count' => $transactionGroup->transactions()->count(),
+                'last_transaction' => $transactionGroup->transactions()->latest()->first()?->created_at,
+            ],
+            'transactions' => $transactionGroup->transactions
+        ];
 
         return response()->json([
             'success' => true,
-            'data' => $transactionGroup
+            'data' => $data
         ]);
     }
 
@@ -189,14 +172,12 @@ class TransactionGroupsController extends Controller
             $request->validate([
                 'name' => 'required|string|max:255',
                 'description' => 'nullable|string',
-                'type' => 'required|in:income,expense',
                 'color' => 'nullable|string|size:7|regex:/^#[0-9A-Fa-f]{6}$/',
             ]);
 
             $transactionGroup->update([
                 'name' => $request->name,
                 'description' => $request->description,
-                'type' => $request->type,
                 'color' => $request->color ?? '#3B82F6',
             ]);
 

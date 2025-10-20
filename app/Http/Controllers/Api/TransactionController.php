@@ -23,6 +23,38 @@ class TransactionController extends Controller
             $query->where('user_id', $user->id);
         }
         
+        // Filter by transaction group if provided
+        if ($request->has('transaction_group_id') && $request->transaction_group_id) {
+            $query->where('transaction_group_id', $request->transaction_group_id);
+        }
+        
+        // Filter by type if provided
+        if ($request->has('type') && $request->type && $request->type !== 'all') {
+            $query->where('type', $request->type);
+        }
+        
+        // Filter by date range if provided
+        if ($request->has('date_from') && $request->date_from) {
+            $query->where('date', '>=', $request->date_from);
+        }
+        
+        if ($request->has('date_to') && $request->date_to) {
+            $query->where('date', '<=', $request->date_to);
+        }
+        
+        // Search functionality
+        if ($request->has('search') && $request->search) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('description', 'like', "%{$search}%")
+                  ->orWhere('category', 'like', "%{$search}%")
+                  ->orWhere('expense_category', 'like', "%{$search}%")
+                  ->orWhereHas('user', function($userQuery) use ($search) {
+                      $userQuery->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
+        
         $limit = $request->get('limit');
         if ($limit) {
             $transactions = $query->orderBy('created_at', 'desc')->limit($limit)->get();
@@ -59,7 +91,7 @@ class TransactionController extends Controller
             'category' => 'nullable|string|max:100',
             'expense_category' => 'nullable|string|max:100',
             'expense_subcategory' => 'nullable|string|max:100',
-            'transaction_group_id' => 'nullable|exists:transaction_groups,id',
+            'transaction_group_id' => 'required|exists:transaction_groups,id',
             'employee_payment_id' => 'nullable|exists:employee_payments,id',
             'user_id' => 'nullable|exists:users,id',
             'notes' => 'nullable|string',
@@ -74,9 +106,13 @@ class TransactionController extends Controller
 
         $user = $request->user();
         
-        // Only admin and finance can create transactions
-        if (!in_array($user->role, ['admin', 'finance'])) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        // Users with role 'user' can create transactions but only for themselves
+        if ($user->role === 'user') {
+            // User can only create transactions for themselves
+            $userId = $user->id;
+        } else {
+            // Admin and finance can specify user_id or default to themselves
+            $userId = $request->user_id ?? $user->id;
         }
 
         $transaction = Transaction::create([
@@ -89,14 +125,18 @@ class TransactionController extends Controller
             'expense_subcategory' => $request->expense_subcategory,
             'transaction_group_id' => $request->transaction_group_id,
             'employee_payment_id' => $request->employee_payment_id,
-            'user_id' => $request->user_id ?? $user->id,
+            'user_id' => $userId,
             'created_by' => $user->id,
             'notes' => $request->notes,
         ]);
 
         $transaction->load(['user', 'createdBy', 'transactionGroup', 'employeePayment']);
 
-        return response()->json($transaction, 201);
+        return response()->json([
+            'success' => true,
+            'data' => $transaction,
+            'message' => 'Transaction created successfully'
+        ], 201);
     }
 
     /**
@@ -120,21 +160,38 @@ class TransactionController extends Controller
      */
     public function update(Request $request, Transaction $transaction)
     {
-        $request->validate([
+        $validator = Validator::make($request->all(), [
             'description' => 'required|string|max:255',
             'type' => 'required|in:income,expense',
             'amount' => 'required|numeric|min:0',
             'date' => 'required|date',
             'category' => 'nullable|string|max:100',
+            'expense_category' => 'nullable|string|max:100',
+            'transaction_group_id' => 'required|exists:transaction_groups,id',
             'user_id' => 'nullable|exists:users,id',
             'notes' => 'nullable|string',
         ]);
 
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
         $user = $request->user();
         
-        // Only admin and finance can update transactions
-        if (!in_array($user->role, ['admin', 'finance'])) {
+        // Users can only edit their own transactions
+        if ($user->role === 'user' && $transaction->user_id !== $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        // For users with role 'user', they can only update to themselves
+        if ($user->role === 'user') {
+            $userId = $user->id;
+        } else {
+            // Admin and finance can specify user_id or keep existing
+            $userId = $request->user_id ?? $transaction->user_id;
         }
 
         $transaction->update([
@@ -143,12 +200,19 @@ class TransactionController extends Controller
             'amount' => $request->amount,
             'date' => $request->date,
             'category' => $request->category,
-            'user_id' => $request->user_id ?? $transaction->user_id,
+            'expense_category' => $request->expense_category,
+            'transaction_group_id' => $request->transaction_group_id,
+            'user_id' => $userId,
             'notes' => $request->notes,
         ]);
 
-        $transaction->load(['user', 'createdBy']);
-        return response()->json($transaction);
+        $transaction->load(['user', 'createdBy', 'transactionGroup']);
+        
+        return response()->json([
+            'success' => true,
+            'data' => $transaction,
+            'message' => 'Transaction updated successfully'
+        ]);
     }
 
     /**
@@ -158,8 +222,13 @@ class TransactionController extends Controller
     {
         $user = $request->user();
         
-        // Only admin and finance can delete transactions
-        if (!in_array($user->role, ['admin', 'finance'])) {
+        // Users can only delete their own transactions
+        if ($user->role === 'user' && $transaction->user_id !== $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        // Admin and finance can delete any transactions
+        if (!in_array($user->role, ['admin', 'finance', 'user'])) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
