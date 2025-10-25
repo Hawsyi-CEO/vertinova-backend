@@ -249,25 +249,47 @@ class TransactionController extends Controller
             $userId = $request->user_id ?? $transaction->user_id;
         }
 
-        $transaction->update([
-            'description' => $request->description,
-            'type' => $request->type,
-            'amount' => $request->amount,
-            'date' => $request->date,
-            'category' => $request->category,
-            'expense_category' => $request->expense_category,
-            'transaction_group_id' => $request->transaction_group_id,
-            'user_id' => $userId,
-            'notes' => $request->notes,
-        ]);
+        DB::beginTransaction();
+        try {
+            $transaction->update([
+                'description' => $request->description,
+                'type' => $request->type,
+                'amount' => $request->amount,
+                'date' => $request->date,
+                'category' => $request->category,
+                'expense_category' => $request->expense_category,
+                'transaction_group_id' => $request->transaction_group_id,
+                'user_id' => $userId,
+                'notes' => $request->notes,
+            ]);
 
-        $transaction->load(['user', 'createdBy', 'transactionGroup']);
-        
-        return response()->json([
-            'success' => true,
-            'data' => $transaction,
-            'message' => 'Transaction updated successfully'
-        ]);
+            // Update hayabusa_payment jika transaksi ini terkait dengan pembayaran hayabusa
+            $hayabusaPayment = HayabusaPayment::where('transaction_id', $transaction->id)->first();
+            if ($hayabusaPayment) {
+                $hayabusaPayment->update([
+                    'amount' => $request->amount,
+                    'payment_date' => $request->date,
+                    'transaction_group_id' => $request->transaction_group_id,
+                ]);
+            }
+
+            DB::commit();
+            
+            $transaction->load(['user', 'createdBy', 'transactionGroup']);
+            
+            return response()->json([
+                'success' => true,
+                'data' => $transaction,
+                'message' => 'Transaction updated successfully'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update transaction',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -287,12 +309,28 @@ class TransactionController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $transaction->delete();
-        
-        return response()->json([
-            'success' => true,
-            'message' => 'Transaction deleted successfully'
-        ]);
+        DB::beginTransaction();
+        try {
+            // Hapus hayabusa_payment jika transaksi ini terkait dengan pembayaran hayabusa
+            HayabusaPayment::where('transaction_id', $transaction->id)->delete();
+            
+            // Hapus transaksi
+            $transaction->delete();
+            
+            DB::commit();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Transaction deleted successfully'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete transaction',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
