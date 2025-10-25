@@ -26,6 +26,7 @@ class TransactionGroupsController extends Controller
                 'color' => $group->color,
                 'created_by' => $group->created_by,
                 'is_active' => $group->is_active,
+                'is_simpaskor' => $group->name === 'Simpaskor', // Flag for Simpaskor group
                 'created_at' => $group->created_at,
                 'updated_at' => $group->updated_at,
                 'statistics' => [
@@ -164,6 +165,13 @@ class TransactionGroupsController extends Controller
         try {
             $user = Auth::user();
             
+            // Protect Simpaskor name from being changed
+            if ($transactionGroup->name === 'Simpaskor' && $request->name !== 'Simpaskor') {
+                return response()->json([
+                    'error' => 'Nama kelompok Simpaskor tidak dapat diubah'
+                ], 403);
+            }
+            
             // Check if user owns this group or is admin
             if ($transactionGroup->created_by !== $user->id && $user->role !== 'admin') {
                 return response()->json(['message' => 'Unauthorized'], 403);
@@ -197,6 +205,13 @@ class TransactionGroupsController extends Controller
     {
         try {
             $user = Auth::user();
+            
+            // Protect Simpaskor from deletion
+            if ($transactionGroup->name === 'Simpaskor') {
+                return response()->json([
+                    'error' => 'Kelompok Simpaskor tidak dapat dihapus karena merupakan kelompok sistem'
+                ], 403);
+            }
             
             // Check if user owns this group or is admin
             if ($transactionGroup->created_by !== $user->id && $user->role !== 'admin') {

@@ -45,5 +45,11 @@ class DatabaseSeeder extends Seeder
                 'role' => 'user',
             ]
         );
+
+        // Seed Hayabusa users
+        $this->call([
+            HayabusaUserSeeder::class,
+            SimpaskorGroupSeeder::class,
+        ]);
     }
 }
