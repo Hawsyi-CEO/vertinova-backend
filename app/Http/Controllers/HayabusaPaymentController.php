@@ -196,7 +196,7 @@ class HayabusaPaymentController extends Controller
         }
 
         $hayabusaUsers = \App\Models\User::where('role', 'hayabusa')
-            ->select('id', 'name', 'email')
+            ->select('id', 'name', 'email', 'bank_name', 'account_number', 'account_holder_name')
             ->get();
 
         return response()->json($hayabusaUsers);
