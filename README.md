@@ -2,7 +2,7 @@
 
 Backend API untuk aplikasi Vertinova Finance menggunakan Laravel 11.
 
-🌐 **Production:** https://vertinova.id/api
+🌐 **Production:** https://api.vertinova.id
 
 ## Requirements
 

@@ -73,6 +73,11 @@ class User extends Authenticatable
         return $this->role === 'user';
     }
 
+    public function isHayabusa()
+    {
+        return $this->role === 'hayabusa';
+    }
+
     public function employeePayments()
     {
         return $this->hasMany(EmployeePayment::class);
@@ -81,6 +86,18 @@ class User extends Authenticatable
     public function approvedPayments()
     {
         return $this->hasMany(EmployeePayment::class, 'approved_by');
+    }
+
+    // Hayabusa payments relationship
+    public function hayabusaPayments()
+    {
+        return $this->hasMany(HayabusaPayment::class, 'hayabusa_user_id');
+    }
+
+    // Hayabusa payments yang sudah dibayar
+    public function paidHayabusaPayments()
+    {
+        return $this->hasMany(HayabusaPayment::class, 'paid_by');
     }
 
     // Calculate total payments for a specific period
@@ -102,6 +119,24 @@ class User extends Authenticatable
             'total_payments' => $this->employeePayments()->where('status', 'paid')->sum('amount'),
             'pending_payments' => $this->employeePayments()->where('status', 'pending')->sum('amount'),
             'this_month' => $this->getTotalPayments(date('Y-m')),
+        ];
+    }
+
+    // Get Hayabusa payment summary
+    public function getHayabusaPaymentSummary()
+    {
+        if (!$this->isHayabusa()) {
+            return null;
+        }
+
+        return [
+            'total_income' => $this->hayabusaPayments()->where('status', 'paid')->sum('amount'),
+            'pending_income' => $this->hayabusaPayments()->where('status', 'pending')->sum('amount'),
+            'this_month' => $this->hayabusaPayments()
+                ->where('status', 'paid')
+                ->whereYear('payment_date', date('Y'))
+                ->whereMonth('payment_date', date('m'))
+                ->sum('amount'),
         ];
     }
 }

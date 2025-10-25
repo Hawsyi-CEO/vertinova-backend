@@ -4,9 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
+use App\Models\HayabusaPayment;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class TransactionController extends Controller
 {
@@ -95,6 +98,7 @@ class TransactionController extends Controller
             'employee_payment_id' => 'nullable|exists:employee_payments,id',
             'user_id' => 'nullable|exists:users,id',
             'notes' => 'nullable|string',
+            'hayabusa_user_id' => 'nullable|exists:users,id',
         ]);
 
         if ($validator->fails()) {
@@ -102,6 +106,25 @@ class TransactionController extends Controller
                 'message' => 'Validation failed',
                 'errors' => $validator->errors()
             ], 422);
+        }
+
+        // Validasi tambahan untuk Pembayaran Hayabusa
+        if ($request->expense_category === 'Pembayaran Hayabusa') {
+            if (!$request->hayabusa_user_id) {
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => ['hayabusa_user_id' => ['Hayabusa harus dipilih']]
+                ], 422);
+            }
+
+            // Verifikasi bahwa user yang dipilih adalah Hayabusa
+            $hayabusaUser = User::find($request->hayabusa_user_id);
+            if (!$hayabusaUser || $hayabusaUser->role !== 'hayabusa') {
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => ['hayabusa_user_id' => ['User yang dipilih bukan Hayabusa']]
+                ], 422);
+            }
         }
 
         $user = $request->user();
@@ -115,28 +138,60 @@ class TransactionController extends Controller
             $userId = $request->user_id ?? $user->id;
         }
 
-        $transaction = Transaction::create([
-            'description' => $request->description,
-            'type' => $request->type,
-            'amount' => $request->amount,
-            'date' => $request->date,
-            'category' => $request->category,
-            'expense_category' => $request->expense_category,
-            'expense_subcategory' => $request->expense_subcategory,
-            'transaction_group_id' => $request->transaction_group_id,
-            'employee_payment_id' => $request->employee_payment_id,
-            'user_id' => $userId,
-            'created_by' => $user->id,
-            'notes' => $request->notes,
-        ]);
+        try {
+            DB::beginTransaction();
 
-        $transaction->load(['user', 'createdBy', 'transactionGroup', 'employeePayment']);
+            $transaction = Transaction::create([
+                'description' => $request->description,
+                'type' => $request->type,
+                'amount' => $request->amount,
+                'date' => $request->date,
+                'category' => $request->category,
+                'expense_category' => $request->expense_category,
+                'expense_subcategory' => $request->expense_subcategory,
+                'transaction_group_id' => $request->transaction_group_id,
+                'employee_payment_id' => $request->employee_payment_id,
+                'user_id' => $userId,
+                'created_by' => $user->id,
+                'notes' => $request->notes,
+            ]);
 
-        return response()->json([
-            'success' => true,
-            'data' => $transaction,
-            'message' => 'Transaction created successfully'
-        ], 201);
+            // Jika kategori adalah Pembayaran Hayabusa, buat record HayabusaPayment
+            if ($request->expense_category === 'Pembayaran Hayabusa' && $request->hayabusa_user_id) {
+                // Extract period from description or notes, or use date
+                $period = date('F Y', strtotime($request->date)); // Default: "January 2025"
+                
+                HayabusaPayment::create([
+                    'hayabusa_user_id' => $request->hayabusa_user_id,
+                    'transaction_id' => $transaction->id,
+                    'transaction_group_id' => $request->transaction_group_id,
+                    'amount' => $request->amount,
+                    'payment_date' => $request->date,
+                    'period' => $period,
+                    'description' => $request->notes ?? $request->description,
+                    'status' => 'paid', // Langsung paid karena sudah dibuat transaksinya
+                    'paid_by' => $user->id,
+                    'paid_at' => now(),
+                ]);
+            }
+
+            DB::commit();
+
+            $transaction->load(['user', 'createdBy', 'transactionGroup', 'employeePayment']);
+
+            return response()->json([
+                'success' => true,
+                'data' => $transaction,
+                'message' => 'Transaction created successfully'
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create transaction: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

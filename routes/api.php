@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\TransactionGroupsController;
 use App\Http\Controllers\Api\TestController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\HayabusaPaymentController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -77,6 +78,23 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/employee-payments/employees', [EmployeePaymentController::class, 'employees']);
         Route::post('/employee-payments/{employeePayment}/approve', [EmployeePaymentController::class, 'approve']);
         Route::apiResource('employee-payments', EmployeePaymentController::class);
+    });
+    
+    // Hayabusa Payments
+    Route::prefix('hayabusa')->group(function () {
+        // Routes untuk Hayabusa user
+        Route::middleware('role:hayabusa')->group(function () {
+            Route::get('/payments', [HayabusaPaymentController::class, 'index']);
+            Route::get('/payments/{id}', [HayabusaPaymentController::class, 'show']);
+            Route::get('/statistics', [HayabusaPaymentController::class, 'statistics']);
+        });
+        
+        // Routes untuk Finance
+        Route::middleware('role:finance,admin')->group(function () {
+            Route::get('/users', [HayabusaPaymentController::class, 'getHayabusaUsers']);
+            Route::post('/payments', [HayabusaPaymentController::class, 'store']);
+            Route::patch('/payments/{id}/status', [HayabusaPaymentController::class, 'updateStatus']);
+        });
     });
     
     // Users (Admin only)
