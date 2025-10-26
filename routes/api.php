@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\TransactionGroupsController;
 use App\Http\Controllers\Api\TestController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\HayabusaPaymentController;
+use App\Http\Controllers\SimpaskorController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -20,6 +21,9 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::options('/login', function() {
     return response()->json(['status' => 'ok']);
 });
+
+// Simpaskor Schedule API - Public endpoint (no auth required)
+Route::get('/simpaskor/schedule', [SimpaskorController::class, 'getSchedule']);
 
 
 
