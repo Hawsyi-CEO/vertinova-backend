@@ -19,7 +19,13 @@ class TransactionController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Transaction::with(['user:id,name,email', 'createdBy:id,name', 'transactionGroup:id,name,color', 'employeePayment:id,employee_name,amount']);
+        $query = Transaction::with([
+            'user:id,name,email', 
+            'createdBy:id,name', 
+            'transactionGroup:id,name,color', 
+            'employeePayment:id,employee_name,amount',
+            'hayabusaPayment.hayabusaUser:id,name,email' // Tambahkan relasi hayabusa payment
+        ]);
         
         // If user role is 'user', only show their own transactions
         if ($user->role === 'user') {
@@ -206,7 +212,7 @@ class TransactionController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $transaction->load(['user', 'createdBy']);
+        $transaction->load(['user', 'createdBy', 'hayabusaPayment.hayabusaUser:id,name,email']);
         return response()->json($transaction);
     }
 
@@ -267,6 +273,7 @@ class TransactionController extends Controller
             $hayabusaPayment = HayabusaPayment::where('transaction_id', $transaction->id)->first();
             if ($hayabusaPayment) {
                 $hayabusaPayment->update([
+                    'hayabusa_user_id' => $userId, // Update hayabusa user juga
                     'amount' => $request->amount,
                     'payment_date' => $request->date,
                     'transaction_group_id' => $request->transaction_group_id,

@@ -59,6 +59,11 @@ class Transaction extends Model
         return $this->belongsTo(EmployeePayment::class);
     }
 
+    public function hayabusaPayment()
+    {
+        return $this->hasOne(HayabusaPayment::class);
+    }
+
     public function scopeAssetExpense($query)
     {
         return $query->where('expense_category', 'asset');
